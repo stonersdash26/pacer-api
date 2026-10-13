@@ -1,0 +1,92 @@
+import asyncio
+import os
+import re
+from playwright.async_api import async_playwright
+
+# Configuration
+CASE_NUMBER = "77C01-2401-F5-000001"  # Replace with your Indiana Odyssey Case Number
+OUTPUT_DIR = "./odyssey_extracted_files"
+
+async def extract_odyssey_case_data(case_num: str, output_folder: str):
+    os.makedirs(output_folder, exist_ok=True)
+    
+    async with async_playwright() as p:
+        # Launch browser
+        browser = await p.chromium.launch(headless=False)  # Set to True for background execution
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        )
+        page = await context.new_page()
+
+        print(f"[+] Navigating to Indiana Odyssey Public Portal (mycase.in.gov)...")
+        await page.goto("https://public.courts.in.gov/mycase/", wait_until="networkidle")
+
+        # Accept terms / search page entry
+        search_input = page.locator("input#CaseSearch_SearchTerm")
+        if not await search_input.is_visible():
+            # If disclaimer popup exists
+            accept_button = page.locator("button:has-text('Accept'), button:has-text('I Agree')")
+            if await accept_button.is_visible():
+                await accept_button.click()
+                await page.wait_for_timeout(1000)
+
+        print(f"[+] Searching for Case Number: {case_num}")
+        await page.fill("input#SearchTerm, input[name='SearchTerm']", case_num)
+        await page.click("button[type='submit'], input[type='submit']")
+        
+        await page.wait_for_selector(".case-summary, .search-result, tbody tr", timeout=15000)
+
+        # Click on matching case result
+        case_link = page.locator(f"a:has-text('{case_num}')").first
+        if await case_link.is_visible():
+            await case_link.click()
+            await page.wait_for_load_state("networkidle")
+            print("[+] Successfully opened case detail page.")
+        else:
+            print("[-] Case number not found in search results.")
+            await browser.close()
+            return
+
+        # Extract all file attachments, exhibits, and external evidence links
+        attachments = await page.locator("a[href*='Document'], a[href*='Download'], a[href*='Exhibit']").all()
+        print(f"[+] Found {len(attachments)} downloadable documents/attachments in docket.")
+
+        for idx, link in enumerate(attachments):
+            href = await link.get_attribute("href")
+            text = (await link.inner_text()).strip() or f"document_{idx+1}"
+            safe_title = re.sub(r'[\W_]+', '_', text)[:50]
+            
+            if href:
+                full_url = href if href.startswith("http") else f"https://public.courts.in.gov{href}"
+                print(f"[->] Downloading: {text} ({full_url})")
+
+                try:
+                    # Trigger download stream
+                    async with page.expect_download(timeout=10000) as download_info:
+                        await link.click()
+                    download = await download_info.value
+                    save_path = os.path.join(output_folder, f"{safe_title}_{download.suggested_filename}")
+                    await download.save_as(save_path)
+                    print(f"[✓] Saved to: {save_path}")
+                except Exception as e:
+                    print(f"[!] Could not direct-download {text}: {e}")
+
+        # Scan page text for cloud links (Google Drive, OneDrive, Axon Evidence sharing links)
+        content = await page.content()
+        evidence_urls = re.findall(
+            r'https?://[^\s<>"]+(?:evidence\.com|drive\.google\.com|onedrive|dropbox|box\.com)[^\s<>"]*',
+            content
+        )
+        
+        if evidence_urls:
+            print("\n[+] Extracted External Media/Body Cam Links:")
+            with open(os.path.join(output_folder, "extracted_media_links.txt"), "w") as f:
+                for url in set(evidence_urls):
+                    print(f"  - {url}")
+                    f.write(url + "\n")
+
+        await browser.close()
+        print("\n[+] Extraction process complete.")
+
+if __name__ == "__main__":
+    asyncio.run(extract_odyssey_case_data(CASE_NUMBER, OUTPUT_DIR))
