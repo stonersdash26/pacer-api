@@ -1,0 +1,9 @@
+python apra_email_sender.py \
+  --to "records@county-sheriff.in.gov" \
+  --name "John Doe" \
+  --contact "555-0199 | john@example.com | 123 Main St, Indianapolis, IN" \
+  --date "2026-09-15" \
+  --time "11:45 AM" \
+  --location "Intersection of SR 37 and Main St, Bloomington, IN" \
+  --person "Jane Doe" \
+  --case-num "26-004321"
