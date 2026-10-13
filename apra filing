@@ -1,0 +1,187 @@
+import argparse
+import os
+import smtplib
+import sys
+from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+# Pre-configured Case & Tracking Constants for Sullivan County
+CASE_NUMBER = "77D01-2609-CM-000645"
+CONTROL_ID = "77A09040526"
+TRACKING_NUMBER = "77-DM4020153"
+
+
+def generate_sullivan_apra_letter(
+    requester_name: str,
+    requester_contact: str,
+    requester_email: str,
+    incident_date: str = "September 2026",
+    incident_time: str = "Unspecified / See CAD",
+    location: str = "Sullivan County, IN",
+) -> str:
+    """Generates a formal Indiana APRA request customized for Sullivan County Sheriff's Office."""
+    today_str = datetime.now().strftime("%B %d, %Y")
+
+    return f"""VIA ELECTRONIC MAIL
+
+Date: {today_str}
+
+To:
+Public Records Officer / Legal Counsel
+Sullivan County Sheriff's Office
+24 S. State Street
+Sullivan, IN 47882
+
+From:
+{requester_name}
+{requester_contact}
+Email: {requester_email}
+
+RE: PUBLIC RECORDS REQUEST PURSUANT TO IC § 5-14-3 (APRA)
+Law Enforcement Recording & Incident File Request
+  - Court Case Number: {CASE_NUMBER} (Sullivan Superior Court)
+  - Control / Citation ID: {CONTROL_ID}
+  - Agency Incident / Tracking Number: {TRACKING_NUMBER}
+
+Dear Public Records Officer:
+
+Pursuant to the Indiana Access to Public Records Act (IC § 5-14-3) and specifically IC § 5-14-3-5.2 (Access to Law Enforcement Recordings) and IC § 5-14-3-5 (Information Relating to Arrests and Summonses), I am formally requesting inspection and copies of all law enforcement recordings, dispatch logs, and public incident files associated with the cross-referenced identifiers above.
+
+1. SPECIFIC RECORDS REQUESTED:
+I request the complete agency file and all electronic media associated with Incident Tracking Number {TRACKING_NUMBER}, Control ID {CONTROL_ID}, and Judicial Case {CASE_NUMBER}, including but not limited to:
+
+  a. Law Enforcement Audio & Video Recordings (IC § 5-14-3-5.2):
+     - All audio and video recorded by body-worn cameras (BWC) worn by any responding or assisting Sullivan County Sheriff deputies or officers.
+     - All in-car dash camera video and audio recordings captured during the incident, transport, or scene processing.
+     - Any audio recordings of 911 calls, radio traffic, and Computer-Aided Dispatch (CAD) communications linked to this incident.
+
+  b. Public Incident & Arrest Documentation (IC § 5-14-3-5):
+     - The complete CAD Incident Detail Report and initial incident summary.
+     - The public arrest record, booking sheet, and summons/citation records associated with Control ID {CONTROL_ID}.
+     - Property logs, evidence listings, and chain of custody sheets maintained by the agency for this case file.
+
+Incident Details:
+  - Approximate Date: {incident_date}
+  - Approximate Time: {incident_time}
+  - Primary Location: {location}
+
+2. STATUTORY COMPLIANCE & RESPONSE DEADLINES:
+  - Statutory Response Window: Under IC § 5-14-3-9(b), if this request is delivered via email, the agency must acknowledge receipt within seven (7) calendar days of transmission.
+  - Redaction Standards & Denial Explanations: If any portion of the requested recordings or documents is redacted or withheld pursuant to statutory exemptions under IC § 5-14-3-5.2(e) or IC § 5-14-3-4, please provide a written response identifying:
+    1. The specific statutory exemption relied upon for each redaction or deletion.
+    2. The name and title of the person responsible for the decision to deny or obscure access.
+  - Reproduction Fees: Pursuant to IC § 5-14-3-8, please notify me in advance if total copying or media reproduction costs are anticipated to exceed $25.00 before processing the request.
+
+Please direct all communications, acknowledgments, and electronic records fulfillments to my contact details listed above.
+
+Sincerely,
+
+{requester_name}
+{requester_email}
+"""
+
+
+def send_apra_email(
+    smtp_server: str,
+    smtp_port: int,
+    sender_email: str,
+    sender_password: str,
+    recipient_email: str,
+    subject: str,
+    body: str,
+):
+    """Transmits the APRA letter via secure SMTP."""
+    msg = MIMEMultipart()
+    msg["From"] = sender_email
+    msg["To"] = recipient_email
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain", "utf-8"))
+
+    try:
+        print(f"[+] Connecting to SMTP server {smtp_server}:{smtp_port}...")
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+        print(f"[✓] APRA Request successfully sent to {recipient_email}")
+    except Exception as e:
+        print(f"[!] Transmission error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Format and transmit Sullivan County APRA request for case 77D01-2609-CM-000645."
+    )
+
+    # Requester Details
+    parser.add_argument("--name", required=True, help="Full legal name of the requester")
+    parser.add_argument("--contact", required=True, help="Mailing address and phone number")
+    parser.add_argument("--to", required=True, help="Sheriff's office records recipient email address")
+
+    # Optional Overrides for Incident Info
+    parser.add_argument("--date", default="September 2026", help="Incident date range")
+    parser.add_argument("--time", default="Unspecified / See CAD", help="Approximate incident time")
+    parser.add_argument("--location", default="Sullivan County, IN", help="Incident location")
+
+    # SMTP Configuration
+    parser.add_argument(
+        "--smtp-server",
+        default=os.getenv("SMTP_SERVER", "smtp.gmail.com"),
+        help="SMTP hostname (default: smtp.gmail.com)",
+    )
+    parser.add_argument(
+        "--smtp-port",
+        type=int,
+        default=int(os.getenv("SMTP_PORT", 587)),
+        help="SMTP port (default: 587)",
+    )
+    parser.add_argument(
+        "--sender-email",
+        default=os.getenv("SENDER_EMAIL"),
+        help="Sender email address (or set SENDER_EMAIL env var)",
+    )
+    parser.add_argument(
+        "--sender-password",
+        default=os.getenv("SENDER_PASSWORD"),
+        help="Sender App Password (or set SENDER_PASSWORD env var)",
+    )
+
+    args = parser.parse_args()
+
+    if not args.sender_email or not args.sender_password:
+        print(
+            "[!] Error: Missing credentials. Pass --sender-email and --sender-password or set SENDER_EMAIL and SENDER_PASSWORD environment variables.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Format Subject & Body
+    subject = f"APRA Public Records Request (IC § 5-14-3) - Case {CASE_NUMBER} / Tracking {TRACKING_NUMBER}"
+    letter_body = generate_sullivan_apra_letter(
+        requester_name=args.name,
+        requester_contact=args.contact,
+        requester_email=args.sender_email,
+        incident_date=args.date,
+        incident_time=args.time,
+        location=args.location,
+    )
+
+    print("\n--- GENERATED SULLIVAN COUNTY APRA LETTER ---")
+    print(letter_body)
+    print("---------------------------------------------\n")
+
+    send_apra_email(
+        smtp_server=args.smtp_server,
+        smtp_port=args.smtp_port,
+        sender_email=args.sender_email,
+        sender_password=args.sender_password,
+        recipient_email=args.to,
+        subject=subject,
+        body=letter_body,
+    )
+
+
+if __name__ == "__main__":
+    main()
