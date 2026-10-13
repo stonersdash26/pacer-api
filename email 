@@ -1,1 +1,157 @@
 apra_email_sender.py
+import argparse
+import os
+import smtplib
+import sys
+from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+
+def generate_apra_body(
+    requester_name: str,
+    requester_contact: str,
+    incident_date: str,
+    incident_time: str,
+    location: str,
+    person_involved: str,
+    case_number: str = "N/A",
+) -> str:
+    """Formats the APRA body camera request adhering to Indiana Code § 5-14-3-5.2."""
+    return f"""To Public Records Officer / Legal Counsel:
+
+Pursuant to the Indiana Access to Public Records Act (IC § 5-14-3) and specifically IC § 5-14-3-5.2 (Law Enforcement Recordings), I am submitting a formal request for inspection and/or copies of all body-worn camera footage, dashcam video, and associated audio recordings for the incident detailed below.
+
+REQUIRED STATUTORY INCIDENT DETAILS (IC § 5-14-3-5.2(a)):
+----------------------------------------------------------------------
+1. Date of Incident: {incident_date}
+2. Approximate Time: {incident_time}
+3. Location of Incident: {location}
+4. Name of Individual(s) Involved: {person_involved}
+5. Law Enforcement Agency/CAD Case #: {case_number}
+----------------------------------------------------------------------
+
+RECORD TYPES REQUESTED:
+- All audio and video recorded by body-worn cameras worn by responding officers.
+- All in-car video/audio recordings from responding patrol units.
+
+STATUTORY TIME LIMITS & REDACTION NOTICES:
+1. Pursuant to IC § 5-14-3-9(b), if this request is emailed, the agency must acknowledge receipt within seven (7) days.
+2. If any portion of the recording is obscured or redacted pursuant to IC § 5-14-3-5.2(e), please provide a written response citing the specific statutory exception relied upon for each redaction.
+3. If fees apply for reproduction under IC § 5-14-3-8, please notify me prior to processing if charges exceed $25.00.
+
+Please direct all communications and responses regarding this request to:
+
+Requester Name: {requester_name}
+Contact Information: {requester_contact}
+Date of Request: {datetime.now().strftime('%B %d, %Y')}
+
+Thank you for your prompt attention to this matter.
+
+Sincerely,
+{requester_name}
+"""
+
+
+def send_email_request(
+    smtp_server: str,
+    smtp_port: int,
+    sender_email: str,
+    sender_password: str,
+    recipient_email: str,
+    subject: str,
+    body: str,
+):
+    """Sends the formatted APRA request via SMTP."""
+    msg = MIMEMultipart()
+    msg["From"] = sender_email
+    msg["To"] = recipient_email
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
+
+    try:
+        print(f"[+] Connecting to SMTP server {smtp_server}:{smtp_port}...")
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+        print(f"[✓] APRA Request successfully sent to {recipient_email}")
+    except Exception as e:
+        print(f"[!] Error transmitting email: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Format and transmit an Indiana APRA body camera footage request via email."
+    )
+    # APRA mandatory fields
+    parser.add_argument("--to", required=True, help="Recipient public records email address")
+    parser.add_argument("--name", required=True, help="Full name of requester")
+    parser.add_argument("--contact", required=True, help="Requester contact info (phone/mailing address)")
+    parser.add_argument("--date", required=True, help="Date of incident (YYYY-MM-DD or MM/DD/YYYY)")
+    parser.add_argument("--time", required=True, help="Approximate time of incident (e.g., '14:30 EST')")
+    parser.add_argument("--location", required=True, help="Specific location of incident")
+    parser.add_argument("--person", required=True, help="Name of at least one person involved")
+    parser.add_argument("--case-num", default="N/A", help="Agency incident or CAD number (optional)")
+
+    # SMTP configuration
+    parser.add_argument(
+        "--smtp-server",
+        default=os.getenv("SMTP_SERVER", "smtp.gmail.com"),
+        help="SMTP server hostname (default: smtp.gmail.com)",
+    )
+    parser.add_argument(
+        "--smtp-port",
+        type=int,
+        default=int(os.getenv("SMTP_PORT", 587)),
+        help="SMTP server port (default: 587)",
+    )
+    parser.add_argument(
+        "--sender-email",
+        default=os.getenv("SENDER_EMAIL"),
+        help="Sender email address (or set SENDER_EMAIL env var)",
+    )
+    parser.add_argument(
+        "--sender-password",
+        default=os.getenv("SENDER_PASSWORD"),
+        help="Sender App Password (or set SENDER_PASSWORD env var)",
+    )
+
+    args = parser.parse_args()
+
+    if not args.sender_email or not args.sender_password:
+        print(
+            "[!] Error: Missing credentials. Provide --sender-email and --sender-password or set SENDER_EMAIL and SENDER_PASSWORD environment variables.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    subject = f"Public Records Request (IC § 5-14-3-5.2) - Body Camera Footage [{args.date} - {args.person}]"
+    body = generate_apra_body(
+        requester_name=args.name,
+        requester_contact=args.contact,
+        incident_date=args.date,
+        incident_time=args.time,
+        location=args.location,
+        person_involved=args.person,
+        case_number=args.case_num,
+    )
+
+    print("\n--- GENERATED REQUEST TEXT ---")
+    print(body)
+    print("------------------------------\n")
+
+    send_email_request(
+        smtp_server=args.smtp_server,
+        smtp_port=args.smtp_port,
+        sender_email=args.sender_email,
+        sender_password=args.sender_password,
+        recipient_email=args.to,
+        subject=subject,
+        body=body,
+    )
+
+
+if __name__ == "__main__":
+    main()
