@@ -1,2 +1,4 @@
 {
  "exclusions": []
+
+python body_cam_extractor.py -i input.mp4 -e exclusions.json --output-public output/public_release.mp4
