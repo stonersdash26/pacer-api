@@ -2,3 +2,181 @@
  "exclusions": []
 
 python body_cam_extractor.py -i input.mp4 -e exclusions.json --output-public output/public_release.mp4
+import argparse
+import json
+import os
+import sys
+import cv2
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description="Extract and sanitize body camera footage for public release."
+    )
+    parser.add_argument(
+        "-i", "--input", required=True, help="Path to input video file (.mp4)"
+    )
+    parser.add_argument(
+        "-e", "--exclusions", required=True, help="Path to exclusions JSON file"
+    )
+    parser.add_argument(
+        "--output-public", required=True, help="Path to save sanitized public release video"
+    )
+    return parser.parse_args()
+
+def time_to_seconds(time_str: str) -> float:
+    """Converts HH:MM:SS or MM:SS to total seconds."""
+    parts = list(map(float, time_str.split(':')))
+    if len(parts) == 3:
+        return parts[0] * 3600 + parts[1] * 60 + parts[2]
+    elif len(parts) == 2:
+        return parts[0] * 60 + parts[1]
+    return parts[0]
+
+def process_video(input_path: str, exclusions_path: str, output_path: str):
+    if not os.path.exists(input_path):
+        raise FileNotFoundError(f"Input file not found: {input_path}")
+    if not os.path.exists(exclusions_path):
+        raise FileNotFoundError(f"Exclusions file not found: {exclusions_path}")
+
+    with open(exclusions_path, 'r') as f:
+        exclusions = json.load(f)
+
+    cap = cv2.VideoCapture(input_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+    # Parse timestamp exclusions to frame intervals
+    cut_intervals = []
+    for item in exclusions.get("time_exclusions", []):
+        if item.get("type") == "cut":
+            start_sec = time_to_seconds(item["start"])
+            end_sec = time_to_seconds(item["end"])
+            cut_intervals.append((int(start_sec * fps), int(end_sec * fps)))
+
+    current_frame = 0
+    written_frames = 0
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # Skip frames in cut intervals
+        skip = any(start <= current_frame <= end for start, end in cut_intervals)
+        if not skip:
+            # Apply visual blurring if spatial exclusions exist
+            for space_ex in exclusions.get("spatial_exclusions", []):
+                sf = space_ex.get("start_frame", 0)
+                ef = space_ex.get("end_frame", float('inf'))
+                if sf <= current_frame <= ef and space_ex.get("type") == "blur":
+                    x, y, w, h = space_ex["bbox"]
+                    roi = frame[y:y+h, x:x+w]
+                    if roi.size > 0:
+                        frame[y:y+h, x:x+w] = cv2.GaussianBlur(roi, (51, 51), 0)
+
+            out.write(frame)
+            written_frames += 1
+
+        current_frame += 1
+
+    cap.release()
+    out.release()
+    print(f"Processing complete. Exported {written_frames} frames to '{output_path}'.")
+
+if __name__ == "__main__":
+    args = parse_arguments()
+    process_video(args.input, args.exclusions, args.output_public)
+import argparse
+import json
+import os
+import sys
+import cv2
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description="Extract and sanitize body camera footage for public release."
+    )
+    parser.add_argument(
+        "-i", "--input", required=True, help="Path to input video file (.mp4)"
+    )
+    parser.add_argument(
+        "-e", "--exclusions", required=True, help="Path to exclusions JSON file"
+    )
+    parser.add_argument(
+        "--output-public", required=True, help="Path to save sanitized public release video"
+    )
+    return parser.parse_args()
+
+def time_to_seconds(time_str: str) -> float:
+    """Converts HH:MM:SS or MM:SS to total seconds."""
+    parts = list(map(float, time_str.split(':')))
+    if len(parts) == 3:
+        return parts[0] * 3600 + parts[1] * 60 + parts[2]
+    elif len(parts) == 2:
+        return parts[0] * 60 + parts[1]
+    return parts[0]
+
+def process_video(input_path: str, exclusions_path: str, output_path: str):
+    if not os.path.exists(input_path):
+        raise FileNotFoundError(f"Input file not found: {input_path}")
+    if not os.path.exists(exclusions_path):
+        raise FileNotFoundError(f"Exclusions file not found: {exclusions_path}")
+
+    with open(exclusions_path, 'r') as f:
+        exclusions = json.load(f)
+
+    cap = cv2.VideoCapture(input_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+    # Parse timestamp exclusions to frame intervals
+    cut_intervals = []
+    for item in exclusions.get("time_exclusions", []):
+        if item.get("type") == "cut":
+            start_sec = time_to_seconds(item["start"])
+            end_sec = time_to_seconds(item["end"])
+            cut_intervals.append((int(start_sec * fps), int(end_sec * fps)))
+
+    current_frame = 0
+    written_frames = 0
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # Skip frames in cut intervals
+        skip = any(start <= current_frame <= end for start, end in cut_intervals)
+        if not skip:
+            # Apply visual blurring if spatial exclusions exist
+            for space_ex in exclusions.get("spatial_exclusions", []):
+                sf = space_ex.get("start_frame", 0)
+                ef = space_ex.get("end_frame", float('inf'))
+                if sf <= current_frame <= ef and space_ex.get("type") == "blur":
+                    x, y, w, h = space_ex["bbox"]
+                    roi = frame[y:y+h, x:x+w]
+                    if roi.size > 0:
+                        frame[y:y+h, x:x+w] = cv2.GaussianBlur(roi, (51, 51), 0)
+
+            out.write(frame)
+            written_frames += 1
+
+        current_frame += 1
+
+    cap.release()
+    out.release()
+    print(f"Processing complete. Exported {written_frames} frames to '{output_path}'.")
+
+if __name__ == "__main__":
+    args = parse_arguments()
+    process_video(args.input, args.exclusions, args.output_public)
