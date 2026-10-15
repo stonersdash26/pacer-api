@@ -68,4 +68,68 @@ def parse_and_filter_audit_summary(url, output_csv="audit_analysis.csv"):
 if __name__ == "__main__":
     target_url = "https://example.gov/audit-report-summary"
     parse_and_filter_audit_summary(target_url)
+import requests
+from bs4 import BeautifulSoup
+import csv
+import re
+
+def parse_and_filter_audit_summary(url, output_csv="audit_analysis.csv"):
+    """
+    Fetches an audit summary page, extracts headings and paragraphs,
+    filters for jurisdiction or accountability keywords, and saves results to CSV.
+    """
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+    }
+    
+    # Target keywords representing constitutional or jurisdictional oversight themes
+    keywords = ['jurisdiction', 'accountability', 'constitutional', 'integrity', 'authority', 'independence']
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status() # Raises an exception for HTTP error codes
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Extract the main title of the audit report
+        title_element = soup.find('h1')
+        report_title = title_element.get_text(strip=True) if title_element else "Title Not Found"
+        
+        extracted_data = []
+        
+        # Scan headings and paragraphs for structural layout and thematic matches
+        for element in soup.find_all(['h2', 'h3', 'p']):
+            text = element.get_text(strip=True)
+            if text:
+                # Check for keyword matches using regex boundary matching
+                matches = [kw for kw in keywords if re.search(r'\b' + kw + r'\b', text, re.IGNORECASE)]
+                
+                # Keep structural headings or text matching our oversight themes
+                if matches or element.name in ['h2', 'h3']:
+                    extracted_data.append({
+                        "tag": element.name,
+                        "text": text,
+                        "matched_keywords": ", ".join(matches) if matches else "Structural Heading"
+                    })
+        
+        # Save the filtered results into a structured CSV file
+        with open(output_csv, mode='w', newline='', encoding='utf-8') as file:
+            writer = csv.DictWriter(file, fieldnames=["tag", "text", "matched_keywords"])
+            writer.writeheader()
+            for row in extracted_data:
+                writer.writerow(row)
+                
+        print(f"Successfully processed report: {report_title}")
+        print(f"Extracted {len(extracted_data)} relevant sections to {output_csv}")
+        
+        return extracted_data
+        
+    except requests.exceptions.RequestException as e:
+        print(f"An error occurred during request: {e}")
+        return []
+
+# Example usage (replace with a target public audit URL)
+if __name__ == "__main__":
+    target_url = "https://example.gov/audit-report-summary"
+    parse_and_filter_audit_summary(target_url)
 
