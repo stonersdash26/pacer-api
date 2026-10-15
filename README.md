@@ -47,6 +47,55 @@ if __name__ == "__main__":
     for section in result.get('key_sections', []):
         print(f" - {section}")
 
+import requests
+from bs4 import BeautifulSoup
+
+def parse_audit_report_summary(url):
+    """
+    Fetches a public audit report page and extracts key metadata and findings headers.
+    """
+    # Set headers to mimic a standard browser request
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status() # Raises an exception for HTTP error codes
+        
+        # Parse the HTML content using BeautifulSoup
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Extract the main title of the audit report
+        title_element = soup.find('h1')
+        report_title = title_element.get_text(strip=True) if title_element else "Title Not Found"
+        
+        # Extract section headers or specific findings elements (adjust selectors as needed)
+        findings = []
+        for heading in soup.find_all(['h2', 'h3']):
+            text = heading.get_text(strip=True)
+            if text:
+                findings.append(text)
+                
+        return {
+            "report_title": report_title,
+            "key_sections": findings
+        }
+        
+    except requests.exceptions.RequestException as e:
+        return {"error": f"An error occurred during request: {e}"}
+
+# Example usage (replace with a target public audit URL)
+if __name__ == "__main__":
+    target_url = "https://example.gov/audit-report-summary"
+    result = parse_audit_report_summary(target_url)
+    
+    print("--- Audit Extraction Result ---")
+    print(f"Report Title: {result.get('report_title')}")
+    print("Key Sections/Findings:")
+    for section in result.get('key_sections', []):
+        print(f" - {section}")
+
 docketalarm-api / pacer-api
 ===============
 
